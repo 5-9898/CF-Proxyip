@@ -18,33 +18,45 @@ jobs:
     steps:
       # 第一步：检出仓库代码
       - name: Checkout repository
-        uses: actions/checkout@v4  # 检出当前仓库代码
+        uses: actions/checkout@v4
 
       # 第二步：设置 Python 环境
       - name: Set up Python
-        uses: actions/setup-python@v5  # 设置 Python 环境
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.x'  # 使用 3.x 版本的 Python
+          python-version: '3.x'
 
       # 第三步：安装依赖
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip  # 升级 pip
-          pip install dnspython requests  # 安装 dnspython 和 requests 库
+          python -m pip install --upgrade pip
+          pip install dnspython requests
 
       # 如果 CloudflareScanner.exe 需要下载，取消下面的注释并填写下载链接
       # - name: Download CloudflareScanner.exe
       #   run: curl -L -o CloudflareScanner/CloudflareScanner.exe "你的下载链接"
 
-      # 第四步：运行 IP 检查脚本
-      - name: Run IP checker script
-        run: python DNS2Geo.py  # 执行 DNS2Geo.py 脚本
+      # 检查输入文件和 CloudflareScanner 目录内容
+      - name: List directory contents (before)
+        run: |
+          dir
+          dir CloudflareScanner || echo "CloudflareScanner 目录不存在"
 
-      # 第五步：提交并推送结果
+      # 运行 IP 检查脚本（会同步等待 EXE 完成）
+      - name: Run IP checker script
+        run: python DNS2Geo.py
+
+      # 检查生成的结果文件
+      - name: List directory contents (after)
+        run: |
+          dir
+          dir CloudflareScanner || echo "CloudflareScanner 目录不存在"
+
+      # 自动提交并推送结果
       - name: Commit and push results
-        uses: stefanzweifel/git-auto-commit-action@v5  # 使用 Git 自动提交动作
+        uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: 'chore: update IP/country info results'  # 提交信息
-          branch: ${{ github.ref }}  # 提交到当前分支
-          commit_user_name: github-actions[bot]  # 提交者用户名
-          commit_user_email: github-actions[bot]@users.noreply.github.com  # 提交者邮箱
+          commit_message: 'chore: update IP/country info results'
+          branch: ${{ github.ref }}
+          commit_user_name: github-actions[bot]
+          commit_user_email: github-actions[bot]@users.noreply.github.com
