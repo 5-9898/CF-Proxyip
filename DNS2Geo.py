@@ -8,6 +8,7 @@ import socket
 import os
 import subprocess
 import csv
+import ipaddress
 
 def load_country_mapping(file_path):
     country_mapping = {}
@@ -86,6 +87,50 @@ def collect_all_ips(manual_ip_file, domains_file, output_file):
         for ip in sorted(all_ips):
             f.write(f"{ip}#未检测\n")
     print(f"所有采集的IP已保存到 {output_file}")
+
+def load_cf_ip_networks(ipv4_file, ipv6_file):
+    cf_networks = []
+    for file in (ipv4_file, ipv6_file):
+        if not os.path.exists(file):
+            print(f"警告: {file} 不存在，跳过。")
+            continue
+        with open(file, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                try:
+                    net = ipaddress.ip_network(line, strict=False)
+                    cf_networks.append(net)
+                except Exception:
+                    try:
+                        addr = ipaddress.ip_address(line)
+                        cf_networks.append(ipaddress.ip_network(f"{addr}/{addr.max_prefixlen}", strict=False))
+                    except Exception:
+                        print(f"CF IP段解析失败: {line}")
+    return cf_networks
+
+def filter_cf_ips_from_file(input_file, output_file, cf_ipv4_file, cf_ipv6_file):
+    cf_networks = load_cf_ip_networks(cf_ipv4_file, cf_ipv6_file)
+    def is_cf_ip(ip):
+        try:
+            ip_obj = ipaddress.ip_address(ip)
+            return any(ip_obj in net for net in cf_networks)
+        except Exception:
+            return False
+    kept_lines = []
+    with open(input_file, 'r', encoding='utf-8') as f:
+        for line in f:
+            if '#' in line:
+                ip = line.strip().split('#')[0]
+                if is_cf_ip(ip):
+                    print(f"排除Cloudflare IP: {ip}")
+                    continue
+            kept_lines.append(line)
+    with open(output_file, 'w', encoding='utf-8') as f:
+        for line in kept_lines:
+            f.write(line)
+    print(f"过滤Cloudflare IP完成，剩余 {len(kept_lines)} 个IP，已保存到 {output_file}")
 
 def detect_all_ip_country(input_file, output_file, country_mapping):
     ip_info = {}
@@ -201,14 +246,12 @@ def run_cloudflarescanner_with_dn():
     if not os.path.isfile(ip_txt_path):
         print(f"未找到 {ip_txt_path}")
         sys.exit(1)
-    # 统计ip.txt行数
     ip_count = 0
     with open(ip_txt_path, 'r', encoding='utf-8') as f:
         for line in f:
             if line.strip():
                 ip_count += 1
     try:
-        # 改为同步等待EXE结束
         subprocess.run([exe_path, "-dn", str(ip_count)], cwd="CloudflareScanner")
         print(f"已启动 {exe_path} -dn {ip_count}")
     except Exception as e:
@@ -216,7 +259,6 @@ def run_cloudflarescanner_with_dn():
         sys.exit(1)
 
 def wait_for_result_csv(result_csv_path, timeout=600, interval=2):
-    """等待result.csv生成，超时时间单位为秒，默认10分钟。"""
     print(f"等待 {result_csv_path} 文件生成 ...")
     waited = 0
     while waited < timeout:
@@ -238,7 +280,6 @@ def process_result_csv(
     if not os.path.isfile(input_file):
         print('未找到 CloudflareScanner/result.csv，请确认 CloudflareScanner.exe 已成功运行并生成此文件。')
         sys.exit(1)
-    # 加载国家代码-中文名字典
     country_dict = {}
     with open(countries_file, 'r', encoding='utf-8') as f:
         for line in f:
@@ -248,7 +289,6 @@ def process_result_csv(
                 name = parts[1].strip()
                 country_dict[code] = name
 
-    # 步骤1：筛选Download Speed (MB/s) > 10的IP，保存到proxyip.txt，并记住速度
     valid_infos = []
     with open(input_file, 'r', encoding='utf-8') as csvfile:
         first_line = csvfile.readline()
@@ -270,7 +310,6 @@ def process_result_csv(
             outfile.write(info['ip'] + '\n')
     print(f"筛选完成，共输出 {len(valid_infos)} 个IP到 {proxyip_file}")
 
-    # 步骤2：查询国家信息并根据字典格式化输出
     def get_country(ip):
         for attempt in range(RETRY):
             try:
@@ -283,7 +322,7 @@ def process_result_csv(
                     print(f"{ip} 未返回国家，响应内容：{data}")
             except Exception as e:
                 print(f"第 {attempt+1} 次获取 {ip} 国家信息失败，错误：{e}")
-            time.sleep(1)  # 每次重试间隔
+            time.sleep(1)
         return 'Unknown'
 
     with open(with_country_file, 'w', encoding='utf-8') as outfile:
@@ -292,7 +331,6 @@ def process_result_csv(
             speed = info['speed']
             country_code = get_country(ip)
             country_name = country_dict.get(country_code, country_code)
-            # 输出格式：IP#速度(MB/s)国家代码国家中文名
             line = f"{ip}#{speed:.2f}(MB/s){country_code}{country_name}\n"
             outfile.write(line)
             print(line.strip())
@@ -317,6 +355,14 @@ if __name__ == "__main__":
     all_ips_with_country = "ips_with_country/all_ips_with_country.txt"
 
     collect_all_ips("Manual_input_IP.txt", "domains.txt", all_ips_with_country)
+    # 直接覆盖原文件，不产生新文件
+    filter_cf_ips_from_file(
+        input_file=all_ips_with_country,
+        output_file=all_ips_with_country,
+        cf_ipv4_file="cloudflare_ipv4.txt",
+        cf_ipv6_file="cloudflare_ipv6.txt"
+    )
+
     detect_all_ip_country(all_ips_with_country, all_ips_with_country, country_mapping)
     extract_ips_from_file(all_ips_with_country, "ips/all_ips.txt")
     filter_ips_by_allowed_countries(
@@ -334,10 +380,8 @@ if __name__ == "__main__":
         target_path="CloudflareScanner/ip.txt"
     )
 
-    # 运行exe前遍历目录
     list_files("运行 exe 前")
     run_cloudflarescanner_with_dn()
-    # 运行exe后遍历目录
     list_files("运行 exe 后")
 
     result_csv = 'CloudflareScanner/result.csv'
@@ -350,7 +394,6 @@ if __name__ == "__main__":
         countries_file='countries.txt',
         RETRY=10
     )
-    # 删除 result.csv
     try:
         os.remove(result_csv)
         print(f"已删除 {result_csv}")
