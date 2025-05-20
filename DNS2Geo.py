@@ -3,6 +3,7 @@ import time
 import requests
 import socket
 import os
+import subprocess
 
 def load_country_mapping(file_path):
     country_mapping = {}
@@ -184,8 +185,22 @@ def save_ip_txt_for_cloudflarescanner(allowed_ip_file, target_path):
             for line in lines:
                 fw.write(line)
         print(f"已保存 {target_path}")
+
+        # 计算IP数量
+        ip_count = 0
+        with open(target_path, 'r') as f:
+            for line in f:
+                if line.strip():
+                    ip_count += 1
+
+        exe_path = os.path.join(os.path.dirname(target_path), "CloudflareScanner.exe")
+        if os.path.exists(exe_path):
+            print(f"正在运行 {exe_path} ...")
+            subprocess.Popen([exe_path, "-dn", str(ip_count)], cwd=os.path.dirname(target_path))
+        else:
+            print(f"没有找到 {exe_path}，请检查 CloudflareScanner.exe 是否存在于 {os.path.dirname(target_path)}")
     except Exception as e:
-        print(f"保存 {target_path} 时发生错误: {e}")
+        print(f"保存或执行 CloudflareScanner.exe 时发生错误: {e}")
 
 if __name__ == "__main__":
     os.makedirs("ips_with_country", exist_ok=True)
