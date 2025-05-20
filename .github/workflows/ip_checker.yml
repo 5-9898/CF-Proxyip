@@ -3,7 +3,7 @@ name: IP 检测与处理脚本
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 */3 * * *'
+    - cron: '0 */3 * * *' # 每3小时（UTC）
 
 permissions:
   contents: write
@@ -12,11 +12,12 @@ permissions:
 jobs:
   run-script:
     runs-on: windows-latest
+
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 检查Python环境
+      - name: 检查 Python 环境
         run: python --version
 
       - name: 安装依赖
@@ -24,7 +25,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install dnspython requests
 
-      - name: 检查CloudflareScanner.exe是否存在
+      - name: 设置 Python 控制台编码为 UTF-8
+        run: echo PYTHONIOENCODING=utf-8 >> %GITHUB_ENV%
+        shell: cmd
+
+      - name: 检查 CloudflareScanner.exe 是否存在
         run: |
           if (!(Test-Path "CloudflareScanner\CloudflareScanner.exe")) {
             Write-Host "CloudflareScanner.exe 不存在"
@@ -32,6 +37,7 @@ jobs:
           } else {
             Write-Host "CloudflareScanner.exe 存在"
           }
+        shell: pwsh
 
-      - name: 运行脚本
+      - name: 运行 DNS2Geo 脚本
         run: python DNS2Geo.py
