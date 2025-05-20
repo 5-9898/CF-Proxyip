@@ -299,6 +299,12 @@ def process_result_csv(
 
     print(f"查询国家并格式化输出完成，共输出 {len(valid_infos)} 个IP到 {with_country_file}")
 
+def list_files(prefix=""):
+    print(f"{prefix} 当前目录内容:")
+    for root, dirs, files in os.walk(".", topdown=True):
+        for name in files:
+            print("  ", os.path.join(root, name))
+
 if __name__ == "__main__":
     os.makedirs("ips_with_country", exist_ok=True)
     os.makedirs("ips", exist_ok=True)
@@ -327,7 +333,13 @@ if __name__ == "__main__":
         allowed_ip_file="ips/allowed_ips.txt",
         target_path="CloudflareScanner/ip.txt"
     )
+
+    # 运行exe前遍历目录
+    list_files("运行 exe 前")
     run_cloudflarescanner_with_dn()
+    # 运行exe后遍历目录
+    list_files("运行 exe 后")
+
     result_csv = 'CloudflareScanner/result.csv'
     if not wait_for_result_csv(result_csv, timeout=600, interval=2):
         sys.exit(1)
